@@ -9,10 +9,20 @@ function initDB() {
         db.run(`
       CREATE TABLE IF NOT EXISTS sessions (
         id TEXT PRIMARY KEY,
+        config TEXT,
         video_enabled INTEGER DEFAULT 0,
         started_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
     `);
+
+        // Migration: Add config column if it doesn't exist (for existing tables)
+        db.all("PRAGMA table_info(sessions)", (err, rows) => {
+            if (err) return;
+            const hasConfig = rows.some(row => row.name === 'config');
+            if (!hasConfig) {
+                db.run("ALTER TABLE sessions ADD COLUMN config TEXT");
+            }
+        });
 
         db.run(`
       CREATE TABLE IF NOT EXISTS messages (
@@ -71,6 +81,26 @@ function getAllSessions() {
     });
 }
 
+function updateSessionConfig(sessionId, config) {
+    return new Promise((resolve, reject) => {
+        const stmt = db.prepare("UPDATE sessions SET config = ? WHERE id = ?");
+        stmt.run(JSON.stringify(config), sessionId, function (err) {
+            if (err) reject(err);
+            else resolve();
+        });
+        stmt.finalize();
+    });
+}
+
+function getSessionConfig(sessionId) {
+    return new Promise((resolve, reject) => {
+        db.get("SELECT config FROM sessions WHERE id = ?", [sessionId], (err, row) => {
+            if (err) reject(err);
+            else resolve(row?.config ? JSON.parse(row.config) : null);
+        });
+    });
+}
+
 function getFullHistory(sessionId) {
     return new Promise((resolve, reject) => {
         db.all(
@@ -87,6 +117,8 @@ function getFullHistory(sessionId) {
 module.exports = {
     initDB,
     createSession,
+    updateSessionConfig,
+    getSessionConfig,
     addMessage,
     getRecentMessages,
     getAllSessions,

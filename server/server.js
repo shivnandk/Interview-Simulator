@@ -14,34 +14,36 @@ const {
     getAllSessions,
     getFullHistory
 } = require('./services/db');
-const VAD = require('./services/vad');
-const { createSTTConnection, generateTTS, LiveTranscriptionEvents } = require('./services/deepgram');
+
+const { createSTTConnection, generateTTS, LiveTranscriptionEvents } =
+    require('./services/deepgram');
 const { getReply } = require('./services/groq');
+
+/* =========================
+   WebSocket Protocol Events
+========================= */
+const WS_EVENTS = {
+    STT_PARTIAL: 'stt_partial',
+    LLM_RESPONSE: 'llm_response',
+    STATUS: 'status',
+    ERROR: 'error'
+};
 
 // Initialize DB
 initDB();
 
 const app = express();
-// Enable CORS for cross-origin requests (Vercel -> Render)
-app.use(cors({
-    origin: '*', // For production, you can set this to your Vercel URL
-    methods: ['GET', 'POST'],
-    allowedHeaders: ['Content-Type']
-}));
+app.use(cors({ origin: '*', methods: ['GET', 'POST'], allowedHeaders: ['Content-Type'] }));
 app.use(express.json());
 
-// Serve static files from React build folder (Optional for split deployment)
+// Serve static files (optional)
 const publicPath = path.join(__dirname, '../client/dist');
 if (fs.existsSync(publicPath)) {
-    console.log("Serving static files from:", publicPath);
     app.use(express.static(publicPath));
-} else {
-    console.log("Static files folder not found. Serving API only mode.");
 }
 
-// --- REST API OVER NODE (EXPRESS) ---
+// -------- REST APIs --------
 
-// 1. Get all sessions
 app.get('/api/sessions', async (req, res) => {
     try {
         const sessions = await getAllSessions();
@@ -51,7 +53,6 @@ app.get('/api/sessions', async (req, res) => {
     }
 });
 
-// 2. Get history for a specific session
 app.get('/api/history/:sessionId', async (req, res) => {
     try {
         const history = await getFullHistory(req.params.sessionId);
@@ -61,7 +62,7 @@ app.get('/api/history/:sessionId', async (req, res) => {
     }
 });
 
-// Fallback for SPA
+// SPA fallback
 app.use((req, res, next) => {
     if (req.method === 'GET' && fs.existsSync(publicPath)) {
         res.sendFile(path.join(publicPath, 'index.html'));
@@ -70,73 +71,109 @@ app.use((req, res, next) => {
     }
 });
 
-// Create HTTP server
 const server = http.createServer(app);
 
-// --- WEBSOCKET FOR VOICE ---
+// -------- WebSocket (Voice) --------
+
 const wss = new WebSocket.Server({ server });
 
 wss.on('connection', async (ws) => {
     console.log('Client connected (WS)');
+
     const sessionId = 'session_' + Date.now();
     await createSession(sessionId);
 
-    let currentTranscript = "";
-    let latestPartial = "";
     let isAIProcessing = false;
-
-    const vad = new VAD(0.02, 800);
+    let sessionConfig = null;
     const stt = createSTTConnection();
 
-    stt.on(LiveTranscriptionEvents.Transcript, (data) => {
-        const alt = data.channel.alternatives[0];
-        if (alt && alt.transcript) {
-            if (data.is_final) {
-                currentTranscript += " " + alt.transcript;
-                latestPartial = "";
-            } else {
-                latestPartial = alt.transcript;
-            }
-            ws.send(JSON.stringify({ type: 'stt_partial', text: (currentTranscript + " " + latestPartial).trim() }));
-        }
-    });
-
-    vad.onSpeechStart = () => {
-        ws.send(JSON.stringify({ type: 'status', text: 'User Speaking...' }));
-    };
-
-    vad.onSilence = async () => {
-        let fullMessage = (currentTranscript + " " + latestPartial).trim();
-        if (!fullMessage || isAIProcessing) return;
-
+    const handleAIResponse = async (userMessage) => {
+        if (isAIProcessing) return;
         isAIProcessing = true;
-        ws.send(JSON.stringify({ type: 'status', text: 'Processing...' }));
 
-        currentTranscript = "";
-        latestPartial = "";
+        ws.send(JSON.stringify({
+            type: WS_EVENTS.STATUS,
+            state: 'processing',
+            text: 'AI Thinking...'
+        }));
 
         try {
-            await addMessage(sessionId, 'user', fullMessage);
+            if (userMessage) {
+                await addMessage(sessionId, 'user', userMessage);
+            }
+
             const history = await getRecentMessages(sessionId, 6);
-            const aiReply = await getReply(history, fullMessage);
+            const aiReply = await getReply(history, userMessage, sessionConfig);
 
             await addMessage(sessionId, 'assistant', aiReply);
-            ws.send(JSON.stringify({ type: 'llm_response', text: aiReply }));
+
+            ws.send(JSON.stringify({
+                type: WS_EVENTS.LLM_RESPONSE,
+                text: aiReply
+            }));
 
             const audioBuffer = await generateTTS(aiReply);
-            if (audioBuffer) ws.send(audioBuffer);
-        } catch (e) {
-            console.error("Pipeline Error:", e);
+            if (audioBuffer) {
+                ws.send(audioBuffer);
+            }
+
+        } catch (err) {
+            console.error('Pipeline Error:', err);
+            ws.send(JSON.stringify({
+                type: WS_EVENTS.ERROR,
+                text: 'Internal server error'
+            }));
         } finally {
             isAIProcessing = false;
-            ws.send(JSON.stringify({ type: 'status', text: 'Listening...' }));
+            ws.send(JSON.stringify({
+                type: WS_EVENTS.STATUS,
+                state: 'listening',
+                text: 'Listening...'
+            }));
         }
     };
 
-    ws.on('message', (message) => {
+    // --- Deepgram Transcription ---
+    stt.on(LiveTranscriptionEvents.Transcript, async (data) => {
+        const alt = data.channel.alternatives[0];
+        if (!alt || !alt.transcript) return;
+
+        // Partial transcript → UI only
+        if (!data.is_final) {
+            ws.send(JSON.stringify({
+                type: WS_EVENTS.STT_PARTIAL,
+                text: alt.transcript
+            }));
+            return;
+        }
+
+        // Final transcript → trigger LLM
+        const userMessage = alt.transcript.trim();
+        if (!userMessage) return;
+
+        await handleAIResponse(userMessage);
+    });
+
+    // --- Audio stream from client → Deepgram ---
+    ws.on('message', async (message) => {
         if (Buffer.isBuffer(message)) {
-            vad.processAudio(message);
-            if (stt.getReadyState() === 1) stt.send(message);
+            if (stt.getReadyState() === 1) {
+                stt.send(message);
+            }
+        } else {
+            try {
+                const data = JSON.parse(message.toString());
+                if (data.type === 'init_interview') {
+                    sessionConfig = data.config;
+                    await updateSessionConfig(sessionId, sessionConfig);
+                    console.log(`Session ${sessionId} initialized with config:`, sessionConfig);
+
+                    // Auto-trigger first question
+                    await handleAIResponse(null);
+                }
+            } catch (err) {
+                console.error('WS JSON Parse Error:', err);
+            }
         }
     });
 
@@ -147,5 +184,5 @@ wss.on('connection', async (ws) => {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-    console.log(`Express server with REST + WS listening on port ${PORT}`);
+    console.log(`Server running on port ${PORT}`);
 });

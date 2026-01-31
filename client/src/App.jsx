@@ -1,18 +1,30 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useInterview } from './hooks/useInterview';
 import ChatBubble from './components/ChatBubble';
 import StatusIndicator from './components/StatusIndicator';
 import ErrorDisplay from './components/ErrorDisplay';
+import InterviewSetup from './components/InterviewSetup';
 import './App.css';
 
 function App() {
   const { status, messages, isRecording, error, start, stop, exportTranscript } = useInterview();
+  const [showSetup, setShowSetup] = useState(true);
+
+  const handleStartInterview = (config) => {
+    setShowSetup(false);
+    start(config);
+  };
 
   const handleStop = () => {
     if (window.confirm('Are you sure you want to stop the interview?')) {
       stop();
+      setShowSetup(true);
     }
   };
+
+  if (showSetup) {
+    return <InterviewSetup onStart={handleStartInterview} />;
+  }
 
   return (
     <div className="app">
@@ -26,7 +38,7 @@ function App() {
 
       <main className="main-container">
         {error && <ErrorDisplay error={error} />}
-        
+
         <div id="transcript" role="log" aria-live="polite" aria-label="Interview transcript">
           {messages.map((msg) => (
             <ChatBubble key={msg.id} message={msg} />
@@ -35,18 +47,6 @@ function App() {
       </main>
 
       <footer className="controls">
-        <button
-          id="btnStart"
-          onClick={start}
-          disabled={isRecording}
-          aria-label="Start interview session"
-        >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-            <polygon points="5 3 19 12 5 21 5 3"></polygon>
-          </svg>
-          Start Interview
-        </button>
-        
         <button
           id="btnStop"
           onClick={handleStop}

@@ -82,15 +82,10 @@ export const useInterview = () => {
                 break;
 
             case 'status':
-                if (msg.text?.includes('Speaking')) {
-                    updateStatus(STATUS_STATES.LISTENING, 'User Speaking');
-                } else if (msg.text?.includes('Processing')) {
-                    updateStatus(STATUS_STATES.PROCESSING, 'AI Thinking...');
-                } else if (msg.text?.includes('Listening')) {
-                    updateStatus(STATUS_STATES.LISTENING, 'Listening...');
-                } else {
-                    updateStatus(STATUS_STATES.DEFAULT, msg.text);
-                }
+                updateStatus(
+                    msg.state || STATUS_STATES.DEFAULT,
+                    msg.text || ''
+                );
                 break;
 
             case 'llm_response':
@@ -227,7 +222,7 @@ export const useInterview = () => {
             return true;
         } catch (error) {
             console.error('Error starting audio:', error);
-            
+
             if (error.name === 'NotAllowedError') {
                 throw new Error('Microphone permission denied. Please allow access and try again.');
             } else if (error.name === 'NotFoundError') {
@@ -238,7 +233,7 @@ export const useInterview = () => {
         }
     };
 
-    const connectWebSocket = useCallback(async () => {
+    const connectWebSocket = useCallback(async (config) => {
         return new Promise((resolve, reject) => {
             try {
                 updateStatus(STATUS_STATES.CONNECTING, "Connecting...");
@@ -268,6 +263,13 @@ export const useInterview = () => {
                     clearTimeout(connectionTimeout);
                     console.log('WebSocket connected');
                     reconnectAttemptsRef.current = 0;
+
+                    // Send initialization config
+                    ws.send(JSON.stringify({
+                        type: 'init_interview',
+                        config: config
+                    }));
+
                     resolve();
                 };
 
@@ -287,15 +289,15 @@ export const useInterview = () => {
 
                 ws.onclose = (event) => {
                     console.log('WebSocket closed:', event.code, event.reason);
-                    
+
                     if (!isCleaningUpRef.current && isRecording) {
                         // Attempt reconnection
                         if (reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS) {
                             reconnectAttemptsRef.current++;
                             updateStatus(STATUS_STATES.CONNECTING, `Reconnecting... (${reconnectAttemptsRef.current}/${MAX_RECONNECT_ATTEMPTS})`);
-                            
+
                             reconnectTimeoutRef.current = setTimeout(() => {
-                                start();
+                                start(config);
                             }, WS_RECONNECT_DELAY);
                         } else {
                             updateStatus(STATUS_STATES.ERROR, "Connection lost");
@@ -317,13 +319,13 @@ export const useInterview = () => {
         });
     }, [handleMessage, playAudioChunk, updateStatus, isRecording]);
 
-    const start = async () => {
+    const start = async (config) => {
         try {
             setError(null);
             isCleaningUpRef.current = false;
 
             // Connect WebSocket
-            await connectWebSocket();
+            await connectWebSocket(config);
 
             // Start audio
             updateStatus(STATUS_STATES.CONNECTING, "Starting audio...");
@@ -331,7 +333,7 @@ export const useInterview = () => {
 
             setIsRecording(true);
             updateStatus(STATUS_STATES.LISTENING, "Listening...");
-            
+
         } catch (error) {
             console.error('Error starting interview:', error);
             setError(error.message);
@@ -406,7 +408,7 @@ export const useInterview = () => {
             .filter(m => !m.isSystem)
             .map(m => `${m.role === 'user' ? 'You' : 'AI Interviewer'}: ${m.content}`)
             .join('\n\n');
-        
+
         const blob = new Blob([transcript], { type: 'text/plain' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
