@@ -1,0 +1,22 @@
+{
+  "name": "voice-interview-assistant",
+  "version": "1.0.0",
+  "description": "Real-time voice-based mock interview assistant",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@deepgram/sdk": "^3.9.0",
+    "@google/generative-ai": "^0.21.0",
+    "cors": "^2.8.6",
+    "dotenv": "^16.4.7",
+    "express": "^5.2.1",
+    "groq-sdk": "^0.37.0",
+    "sqlite3": "^5.1.7",
+    "ws": "^8.18.0"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}
