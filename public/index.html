@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interview Simulator</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #121212;
+            --surface-color: #1e1e1e;
+            --primary-color: #3b82f6;
+            --secondary-color: #10b981;
+            --text-primary: #e5e7eb;
+            --text-secondary: #9ca3af;
+            --accent-glow: rgba(59, 130, 246, 0.5);
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .header {
+            background-color: var(--surface-color);
+            padding: 1.5rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #333;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            z-index: 10;
+        }
+
+        .header h1 {
+            margin: 0;
+            font-size: 1.25rem;
+            font-weight: 600;
+            letter-spacing: 0.025em;
+            color: white;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .status-badge {
+            background: #333;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.3s ease;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: #666;
+            transition: background-color 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        /* Status States */
+        .status-listening .status-badge {
+            border: 1px solid var(--secondary-color);
+            color: var(--secondary-color);
+            background: rgba(16, 185, 129, 0.1);
+        }
+
+        .status-listening .status-dot {
+            background-color: var(--secondary-color);
+            box-shadow: 0 0 10px var(--secondary-color);
+            animation: pulse 1.5s infinite;
+        }
+
+        .status-processing .status-badge {
+            border: 1px solid var(--primary-color);
+            color: var(--primary-color);
+            background: rgba(59, 130, 246, 0.1);
+        }
+
+        .status-processing .status-dot {
+            background-color: var(--primary-color);
+            animation: bounce 1s infinite;
+        }
+
+        .status-speaking .status-badge {
+            border: 1px solid #f59e0b;
+            color: #f59e0b;
+            background: rgba(245, 158, 11, 0.1);
+        }
+
+        .status-speaking .status-dot {
+            background-color: #f59e0b;
+            box-shadow: 0 0 10px #f59e0b;
+        }
+
+        .main-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            max-width: 900px;
+            margin: 0 auto;
+            width: 100%;
+            padding: 20px;
+            box-sizing: border-box;
+            position: relative;
+        }
+
+        #transcript {
+            flex: 1;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            padding: 20px;
+        }
+
+        /* Scrollbar Styling */
+        #transcript::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        #transcript::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        #transcript::-webkit-scrollbar-thumb {
+            background-color: #444;
+            border-radius: 4px;
+        }
+
+        .message {
+            max-width: 80%;
+            padding: 12px 18px;
+            border-radius: 12px;
+            line-height: 1.5;
+            font-size: 1rem;
+            animation: fadeIn 0.3s ease-out;
+            position: relative;
+        }
+
+        .user-msg {
+            align-self: flex-end;
+            background-color: var(--primary-color);
+            color: white;
+            border-bottom-right-radius: 2px;
+        }
+
+        .ai-msg {
+            align-self: flex-start;
+            background-color: var(--surface-color);
+            color: var(--text-primary);
+            border: 1px solid #333;
+            border-bottom-left-radius: 2px;
+        }
+
+        .message-role {
+            font-size: 0.75rem;
+            margin-bottom: 4px;
+            opacity: 0.7;
+            font-weight: 500;
+            display: block;
+        }
+
+        .controls {
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            background: linear-gradient(to top, var(--bg-color) 80%, transparent);
+        }
+
+        button {
+            background-color: var(--surface-color);
+            color: white;
+            border: 1px solid #444;
+            padding: 12px 32px;
+            border-radius: 30px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3);
+            border-color: #666;
+            background-color: #2a2a2a;
+        }
+
+        button:active:not(:disabled) {
+            transform: translateY(0);
+        }
+
+        #btnStart {
+            background-color: var(--primary-color);
+            border-color: var(--primary-color);
+        }
+
+        #btnStart:hover:not(:disabled) {
+            background-color: #2563eb;
+            box-shadow: 0 0 15px var(--accent-glow);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes pulse {
+            0% {
+                opacity: 1;
+                transform: scale(1);
+            }
+
+            50% {
+                opacity: 0.5;
+                transform: scale(1.2);
+            }
+
+            100% {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+
+        @keyframes bounce {
+
+            0%,
+            100% {
+                transform: translateY(0);
+            }
+
+            50% {
+                transform: translateY(-3px);
+            }
+        }
+
+        /* Partial transcript styling */
+        .partial {
+            opacity: 0.6;
+            font-style: italic;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="header">
+        <h1>
+            <span style="font-size: 1.5rem;">🎙️</span>
+            Interview Simulator
+        </h1>
+        <div id="statusContainer" class="">
+            <div class="status-badge">
+                <div class="status-dot"></div>
+                <span id="statusText">Ready</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="main-container">
+        <div id="transcript">
+            <!-- Messages will appear here -->
+            <div class="message ai-msg">
+                <span class="message-role">System</span>
+                Click 'Start Interview' to begin. I'm ready when you are!
+            </div>
+        </div>
+    </div>
+
+    <div class="controls">
+        <button id="btnStart">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="5 3 19 12 5 21 5 3"></polygon>
+            </svg>
+            Start Interview
+        </button>
+        <button id="btnStop" disabled>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="6" y="4" width="4" height="16"></rect>
+                <rect x="14" y="4" width="4" height="16"></rect>
+            </svg>
+            Stop
+        </button>
+    </div>
+
+    <script src="client.js"></script>
+    <script>
+        // UI Enhancements directly in HTML to avoid modifying client.js logic too much if not needed, 
+        // but we need to intercept the `handleMessage` logic.
+        // Actually, client.js edits the DOM directly. We should probably update client.js too
+        // to use the new CSS classes structure.
+        // OR, we can make client.js generic and handle UI rendering here?
+        // No, client.js matches logic. Let's update client.js next.
+    </script>
+</body>
+
+</html>
