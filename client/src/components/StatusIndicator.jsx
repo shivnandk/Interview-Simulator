@@ -4,16 +4,36 @@ const StatusIndicator = ({ status }) => {
     const { state, text } = status;
 
     const getStatusClass = () => {
-        if (state === 'listening') return 'status-listening';
-        if (state === 'processing') return 'status-processing';
-        if (state === 'speaking') return 'status-speaking';
-        return '';
+        switch (state) {
+            case 'listening':
+                return 'status-listening';
+            case 'processing':
+                return 'status-processing';
+            case 'speaking':
+                return 'status-speaking';
+            case 'connecting':
+                return 'status-connecting';
+            case 'error':
+                return 'status-error';
+            default:
+                return '';
+        }
+    };
+
+    const getAriaLabel = () => {
+        return `Status: ${text}`;
     };
 
     return (
-        <div id="statusContainer" className={getStatusClass()}>
+        <div 
+            id="statusContainer" 
+            className={getStatusClass()}
+            role="status"
+            aria-live="polite"
+            aria-label={getAriaLabel()}
+        >
             <div className="status-badge">
-                <div className="status-dot"></div>
+                <div className="status-dot" aria-hidden="true"></div>
                 <span id="statusText">{text}</span>
             </div>
         </div>
